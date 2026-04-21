@@ -19,7 +19,6 @@
 	"send_email": [
 		{
 			"name": "EMAIL",
-			"destination_address": "worker@aqueous.lol",
 			"remote": true
 		}
 	],
