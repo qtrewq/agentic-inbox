@@ -95,16 +95,29 @@ app.get("/api/v1/config", (c) => {
 // -- Mailboxes ------------------------------------------------------
 
 app.get("/api/v1/mailboxes", async (c) => {
+	// 1. Get the current logged-in user's email
+	const userEmail = c.req.header("Cf-Access-Authenticated-User-Email");
+
 	const { objects } = await c.env.BUCKET.list({ prefix: "mailboxes/" });
 	const mailboxes = await Promise.all(
 		objects.map(async (o) => {
 			const res = await c.env.BUCKET.get(o.key);
 			if (!res) return null;
-			const settings = await res.json();
+			
+			const settings = await res.json() as any;
 			const email = o.key.split("/")[1].split(".json")[0];
+
+			// 2. Filter: Only return the mailbox if the owner matches the logged-in user
+			// We also allow the 'email' to match directly for legacy/admin support
+			if (settings.owner !== userEmail && email !== userEmail) {
+				return null;
+			}
+
 			return { id: email, email, name: settings.fromName, settings };
 		})
 	);
+
+	// 3. Return only the mailboxes the user is allowed to see
 	return c.json(mailboxes.filter((m) => m !== null));
 });
 
