@@ -100,20 +100,33 @@ app.get("/api/v1/mailboxes", async (c) => {
 });
 
 app.post("/api/v1/mailboxes", async (c) => {
+	// 1. Capture the logged-in user's email from Cloudflare Access
+	const userEmail = c.req.header("Cf-Access-Authenticated-User-Email");
+	
 	const { name, settings, email: rawEmail } = CreateMailboxBody.parse(await c.req.json());
 	const email = rawEmail.toLowerCase();
 	const allowedAddresses = (c.env.EMAIL_ADDRESSES ?? []) as string[];
+	
 	if (allowedAddresses.length > 0 && !allowedAddresses.map((a) => a.toLowerCase()).includes(email)) {
 		return c.json({ error: "Mailbox creation is restricted to configured EMAIL_ADDRESSES" }, 403);
 	}
+	
 	const key = `mailboxes/${email}.json`;
 	if (await c.env.BUCKET.head(key)) return c.json({ error: "Mailbox already exists" }, 409);
+	
 	const defaultSettings = { fromName: name, forwarding: { enabled: false, email: "" }, signature: { enabled: false, text: "" }, autoReply: { enabled: false, subject: "", message: "" } };
 	const finalSettings = { ...defaultSettings, ...settings };
-	await c.env.BUCKET.put(key, JSON.stringify(finalSettings));
+	
+	// 2. Add the owner's email to the settings before saving to the Bucket
+	const settingsWithOwner = { ...finalSettings, owner: userEmail };
+	
+	await c.env.BUCKET.put(key, JSON.stringify(settingsWithOwner));
+	
 	const stub = c.env.MAILBOX.get(c.env.MAILBOX.idFromName(email));
 	await stub.getFolders();
-	return c.json({ id: email, email, name, settings: finalSettings }, 201);
+	
+	// 3. Return the owner in the response so the UI knows who it belongs to
+	return c.json({ id: email, email, name, settings: settingsWithOwner, owner: userEmail }, 201);
 });
 
 app.get("/api/v1/mailboxes/:mailboxId", async (c) => {
