@@ -95,8 +95,17 @@ app.get("/api/v1/config", (c) => {
 // -- Mailboxes ------------------------------------------------------
 
 app.get("/api/v1/mailboxes", async (c) => {
-	const allMailboxes = await listMailboxes(c.env.BUCKET);
-	return c.json(allMailboxes.map((m) => ({ ...m, name: m.id })));
+	const { objects } = await c.env.BUCKET.list({ prefix: "mailboxes/" });
+	const mailboxes = await Promise.all(
+		objects.map(async (o) => {
+			const res = await c.env.BUCKET.get(o.key);
+			if (!res) return null;
+			const settings = await res.json();
+			const email = o.key.split("/")[1].split(".json")[0];
+			return { id: email, email, name: settings.fromName, settings };
+		})
+	);
+	return c.json(mailboxes.filter((m) => m !== null));
 });
 
 app.post("/api/v1/mailboxes", async (c) => {
